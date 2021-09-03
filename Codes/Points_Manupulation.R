@@ -67,4 +67,71 @@ merged <- merge(points_clean, comments_complete, by = "plot_ID")
 
 writeOGR(merged,dsn ="/Users/rragankonywa/OneDrive/UniWurzburg/EAGLES/Semester2/field Mesurements",layer = "Merged3",driver = "ESRI Shapefile")
 
+##################################
+# re-project the merged points and create square polygons around
 
+
+merged_projected <- spTransform(merged, CRS("+init=epsg:25832"))
+
+
+
+### MAKE A 11 M RECTANGUILAR BUFFER AROUND EACH POINT ##########################
+
+
+# create a 30m square polygon around each point
+#define radius
+radius <- 11
+geom(merged_projected)
+# get the coordinates information for the points and add it as a column 
+#in the spatialPointDataframe
+
+cordinates <- geom(merged_projected) %>% 
+  as.data.frame() %>% 
+  rename(Lon=x, Lat=y)
+
+merged_projected_withCord <- cbind(cordinates[2:3],merged_projected)
+cordinates[2:3]
+merged_projected_withCord$Lat
+
+x <- merged_projected
+xx <- cbind(merged_projected,cordinates)
+
+xx$fid
+merged$photo
+# define the plot edges based upon the plot radius. 
+
+yMax <- merged_projected_withCord$Lat + radius
+xMax <- merged_projected_withCord$Lon + radius
+yMin <- merged_projected_withCord$Lat - radius
+xMin <- merged_projected_withCord$Lon - radius
+
+# calculate polygon coordinates for each plot centroid. 
+square= as.data.frame(cbind(xMin,yMax,  # NW corner
+                            xMax, yMax,  # NE corner
+                            xMax,yMin,  # SE corner
+                            xMin,yMin, # SW corner
+                            xMin,yMax)) # NW corner again - close ploygon)
+
+# make the square object a double class from class list 
+square_Double <- coordinates(square)
+typeof(square_Double)
+
+
+##########################################
+# create a polygon from square vertex
+# Convert the polygons to spatial polygon dataframe
+# and write it in the loca;l directory as a shapefile
+######################################
+
+polys <- SpatialPolygons(mapply(function(poly, id){
+  xy <- matrix(poly, ncol=2, byrow=TRUE)
+  Polygons(list(Polygon(xy)), ID=id)
+}, split(square_Double, row(square_Double)), merged_projected_withCord$fid),proj4string=CRS(as.character(crs(merged_projected))))
+
+polys.df <- SpatialPolygonsDataFrame(polys, data.frame(id=merged_projected_withCord$fid, row.names=merged_projected_withCord$fid))
+
+# Join the original data fields to the created spatialPolygonDataframe
+# i.e rejoin to have the tree metadata
+polys.df_withData <- cbind(polys.df,as.data.frame (merged_projected[-c(2:4)]))
+# save the data in a local directory
+rgdal::writeOGR(polys.df_withData, dsn = "/Users/rragankonywa/OneDrive/UniWurzburg/EAGLES/Semester2/field_Mesurements/MB3/Data/Data", layer = 'Points_as_Polygon', driver = 'ESRI Shapefile',)
